@@ -1,65 +1,88 @@
+// threadtools.h
 #ifndef THREADTOOL
 #define THREADTOOL
 #include <setjmp.h>
 #include <sys/signal.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-#define THREAD_MAX 16 // maximum number of threads created
+#define THREAD_MAX 16
 
 struct tcb {
-    int id;                  // the thread id
-    jmp_buf environment;     // where the scheduler should jump to
-    int arg;                 // argument to the function
-    int i, x, y, z, num[11]; // declare the variables you wish to keep between switches
-    int waiting_for;         // id of the thread this thread is waiting for (-1 if not waiting)
+    int id;
+    jmp_buf environment;
+    int arg;
+    int i, x, y, z, num[11];
+    int waiting_for;
 };
 
 struct thread_status {
-    int exists;              // whether this thread exists (0 = not exists, 1 = exists)
-    int has_exited;          // whether this thread has exited (0 = not exited, 1 = exited)
-    int return_value;        // return value of the thread
+    int exists;
+    int has_exited;
+    int return_value;
 };
 
 extern int timeslice;
 extern jmp_buf sched_buf;
 extern struct tcb *ready_queue[THREAD_MAX], *waiting_queue[THREAD_MAX];
-/*
- * rq_size: size of the ready queue
- * rq_current: current thread in the ready queue
- * wq_size: size of the waiting queue
- */
 extern int rq_size, rq_current, wq_size;
-/*
- * thread_status_array: stores status information for each thread, indexed by thread id
- */
 extern struct thread_status thread_status_array[THREAD_MAX];
-/*
- * base_mask: blocks both SIGTSTP and SIGALRM
- * tstp_mask: blocks only SIGTSTP
- * alrm_mask: blocks only SIGALRM
- */
 extern sigset_t base_mask, tstp_mask, alrm_mask;
-/*
- * Use this to access the running thread.
- */
-#define RUNNING (ready_queue[rq_current])
-
 void sighandler(int signo);
 void scheduler();
 
-// TODO:
-#define thread_create(func, id, arg) { \
+#define RUNNING (ready_queue[rq_current])
+
+// thread_create: simply call the function (which will call thread_setup immediately).
+#define thread_create(func, id, arg) {        \
+    func(id, arg);                            \
 }
 
-#define thread_setup(id, arg) { \
+// thread_setup: initialize TCB, enqueue to ready, print ID and function name.
+#define thread_setup(id, arg) {                               \
+    struct tcb *t = malloc(sizeof(struct tcb));              \
+    t->id = (id); t->arg = (arg);                             \
+    t->waiting_for = -1;                                      \
+    t->x = arg >> 16;                                         \
+    t->y = arg & 0xFFFF;                                      \
+    t->z = 0;                                                 \
+    thread_status_array[id].exists = 1;                       \
+    thread_status_array[id].has_exited = 0;                   \
+    ready_queue[rq_size++] = t;                               \
+    printf("%d %s\n", id, __func__); /* print "[id] funcname" */ \
+    if (!sigsetjmp(t->environment, 1)) return;                \
 }
 
-#define thread_exit() { \
+// thread_exit: mark as exited and jump to scheduler (reason 3).
+#define thread_exit(val) {                                          \
+    thread_status_array[RUNNING->id].has_exited = 1;               \
+    thread_status_array[RUNNING->id].return_value = (val);         \
+    siglongjmp(sched_buf, 3); /* no return */                      \
 }
 
-#define thread_yield() { \
+// thread_yield: save context, unblock signals, then reblock if no pending.
+#define thread_yield() {                                         \
+    if (!sigsetjmp(RUNNING->environment, 1)) {                   \
+        /* Unblock SIGTSTP and SIGALRM so handler can catch them. */ \
+        sigprocmask(SIG_UNBLOCK, &tstp_mask, NULL);              \
+        sigprocmask(SIG_UNBLOCK, &alrm_mask, NULL);              \
+        /* Re-block both signals (base_mask blocks both) */      \
+        sigprocmask(SIG_SETMASK, &base_mask, NULL);              \
+    }                                                            \
 }
 
-#define thread_join(id, retval) { \
+// thread_join: if target exited, get retval; otherwise wait and jump to scheduler.
+#define thread_join(id, retval) {                                        \
+    if (thread_status_array[id].has_exited) {                            \
+        retval = thread_status_array[id].return_value;                \
+    } else {                                                             \
+        RUNNING->waiting_for = (id);                                     \
+        waiting_queue[wq_size++] = RUNNING;                              \
+        if (!sigsetjmp(RUNNING->environment, 1)) {                       \
+            siglongjmp(sched_buf, 2); /* scheduler: reason 2 (join) */  \
+        }                                                                \
+        retval = thread_status_array[id].return_value;                \
+    }                                                                    \
 }
 
 #endif // THREADTOOL

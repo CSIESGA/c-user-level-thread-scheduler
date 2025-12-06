@@ -57,6 +57,7 @@ void init_threads(int fib_arg, int stir_type, int stir_n, int sum_n, int sum_k) 
     if (fib_arg >= 0) {
 		thread_create(fibonacci, id++, fib_arg);
 	}
+    // printf("finish fib!\n");
     if ((stir_type == 1 || stir_type == 2) && stir_n >= 0) {
         thread_create(stir, id++, (stir_type << 16) | stir_n);
 	}
