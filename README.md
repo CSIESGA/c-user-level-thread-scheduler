@@ -1,4 +1,14 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/esd2FHxG)
-# NTU System Programming 2025 Fall Programming Assignment 3
+# User-Level Thread Scheduler in C
 
-Please refer to the [assignment description](https://hackmd.io/mZ6DmYxBRuOv9zzAB_b6lQ?view) for the details.
+A small user-level threading runtime that runs multiple tasks inside one Unix process. The scheduler switches execution contexts with `sigsetjmp()` and `siglongjmp()` and uses Unix signals to trigger scheduling. Threads can yield, exit, or wait for another thread and collect its return value.
+
+## Build and run
+
+From the repository root on Linux with GCC and Make installed:
+
+```sh
+make
+./main 3 6 1 4 -1 -1
+```
+
+This example runs Fibonacci and Stirling number tasks. See `sample_execution.sh` for examples of signal handling and thread joins.
